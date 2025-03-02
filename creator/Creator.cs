@@ -10,7 +10,7 @@ public class Creator
     private readonly string _outputDir = "C:\\Users\\alexe\\Desktop\\OutputAI\\Game";
     private readonly IChat _chat;
     
-    private List<string> _context = new List<string>();
+    private List<string> _contexts = new List<string>();
 
     public Creator()
     {
@@ -21,9 +21,10 @@ public class Creator
     public void Run()
     {
         string design = GameDesign();
-        _context.Add(design);
-        string modules = CreateModules(design);
-        CreateModulesCode(modules, design);
+        _contexts.Add("We are creating a new game with game design: ```GameDesign " + Environment.NewLine + design + Environment.NewLine + " ``` ");
+        string modules = CreateModules();
+        _contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules + Environment.NewLine+ " ``` ");
+        CreateModulesCode(modules);
     }
     
     private string GameDesign()
@@ -31,13 +32,13 @@ public class Creator
         if (TryLoadFile(_outputDir,_gameName, out var gameDesignLoaded)) 
             return gameDesignLoaded;
         
-        string prompt = "Come up with a design for a simple logic game";
+        string prompt = "Come up with a game design for a simple logic game for PC.";
         var design = _chat.SendPrompt(prompt);
         SaveFile(_gameName,design);
         return design;
     }
 
-    private string CreateModules(string gameDesign)
+    private string CreateModules()
     {
         if (TryLoadFile(_outputDir, _gameName + "_Modules" , out var modulesLoaded)) 
             return modulesLoaded;
@@ -53,19 +54,33 @@ public class Creator
         return modulesResult;
     }
 
-    private void CreateModulesCode(string modulesJson, string design)
+    private void CreateModulesCode(string modulesJson)
     {
         foreach (var module in ParseModules(modulesJson))
         {
-            if (TryLoadFile(_outputDir, module.Item1 , out var _)) 
+            if (TryLoadFile(_outputDir, module.Item1, out var fileContent))
+            {
+                _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
                 continue;
-            string context = "We are creating a new game with game design: ```GameDesign " + design + " ``` ";
-            string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Modole descripton: {module.Item2}";
-            var moduleCode = _chat.ResetAndSendPrompt(context+ prompt);
+            }
+
+            string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
+            var moduleCode = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
             SaveFile(module.Item1, moduleCode);
+            _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
         }
     }
-    
+
+    private string GetAllContext()
+    {
+        StringBuilder result = new StringBuilder();
+        foreach (var context in _contexts)
+        {
+            result.AppendLine(context);
+        }
+        return result.ToString();
+    }
+
     private List<(string, string)> ParseModules(string json)
     {
         json = json.Replace("```json", "");
@@ -93,8 +108,6 @@ public class Creator
         if (File.Exists(Path.Combine(s, fileName + ".txt")))
         {
             fileContent = File.ReadAllText(Path.Combine(s, fileName + ".txt"));
-            string prompt = $"Read this context and don' answer anything : {fileContent}";
-            _chat.SendContext(prompt);
             return true;
         }
 
