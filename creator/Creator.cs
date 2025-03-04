@@ -7,14 +7,14 @@ namespace Creator;
 public class Creator
 {
     private readonly string _gameName = "Game1";
-    private readonly string _outputDir = "C:\\Users\\alexe\\Desktop\\OutputAI\\Game";
     private IChat _chat;
     
     private List<string> _contexts = new List<string>();
+    private readonly FileSaver _fileSaver;
 
     public Creator()
     {
-        Directory.CreateDirectory(_outputDir);
+        _fileSaver = new FileSaver();
     }
 
     public void Run()
@@ -47,18 +47,18 @@ public class Creator
 
     private string GameDesign()
     {
-        if (TryLoadFile(_outputDir,_gameName, out var gameDesignLoaded)) 
+        if (_fileSaver.TryLoadFile(_gameName, out var gameDesignLoaded)) 
             return gameDesignLoaded;
         
         string prompt = "Come up with a game design for a simple game (like Three in a row) for PC.";
         var design = _chat.SendPrompt(prompt);
-        SaveFile(_gameName,design);
+        _fileSaver.SaveFile(_gameName,design);
         return design;
     }
 
     private string CreateModules()
     {
-        if (TryLoadFile(_outputDir, _gameName + "_Modules" , out var modulesLoaded)) 
+        if (_fileSaver.TryLoadFile(_gameName + "_Modules" , out var modulesLoaded)) 
             return modulesLoaded;
     
         string phrase = "let's try to write such a game. First, decompose application on into modules and submodules.";
@@ -68,7 +68,7 @@ public class Creator
             "description should be detailed, description should include logic of module, description should include data types of input and output, json must contain oly name and description";
 
         var modulesResult = _chat.SendPrompt(phrase + giveMeTheAnswerInJsonFormat);
-        SaveFile(_gameName + "_Modules", modulesResult);
+        _fileSaver.SaveFile(_gameName + "_Modules", modulesResult);
         return modulesResult;
     }
 
@@ -76,15 +76,16 @@ public class Creator
     {
         foreach (var module in ParseModules(modulesJson))
         {
-            if (TryLoadFile(_outputDir, module.Item1, out var fileContent))
+            if (_fileSaver.TryLoadFile(module.Item1, out var fileContent))
             {
                 _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
+                _fileSaver.SaveCSharp(module.Item1, fileContent);
                 continue;
             }
 
             string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
             var moduleCode = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
-            SaveFile(module.Item1, moduleCode);
+            _fileSaver.SaveFile(module.Item1, moduleCode);
             _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
         }
     }
@@ -115,24 +116,4 @@ public class Creator
         
         return modules;
     }
-
-    private void SaveFile(string fileName, string content)
-    {
-        File.WriteAllText(Path.Combine(_outputDir, fileName + ".txt"), content);
-    }
-
-    private bool TryLoadFile(string s, string fileName, out string fileContent)
-    {
-        if (File.Exists(Path.Combine(s, fileName + ".txt")))
-        {
-            fileContent = File.ReadAllText(Path.Combine(s, fileName + ".txt"));
-            return true;
-        }
-
-        fileContent = string.Empty;  
-        return false;
-    }
-
-
-
 }
