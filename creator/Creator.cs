@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OllamaSharp;
 
 namespace Creator;
@@ -100,11 +101,10 @@ public class Creator
         return result.ToString();
     }
 
-    private List<(string, string)> ParseModules(string json)
+    private List<(string, string)> ParseModules(string jsonOutput)
     {
-        json = json.Replace("```json", "");
-        json = json.Replace("```", "");
-        using JsonDocument doc = JsonDocument.Parse(json);
+        var json = OutputParser.Parse(jsonOutput, "json");
+        using JsonDocument doc = JsonDocument.Parse(json.First());
         List<(string, string)> modules = new();
         
         foreach (var element in doc.RootElement.GetProperty("modules").EnumerateArray())
