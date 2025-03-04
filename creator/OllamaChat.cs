@@ -3,14 +3,14 @@ using OllamaSharp;
 
 namespace Creator;
 
-public interface IChat
+public interface IChat: IDisposable
 {
     string SendPrompt(string input);
     void SendContext(string prompt);
     string ResetAndSendPrompt(string input);
 }
 
-public class OllamaChat : IChat
+public class OllamaChat : IChat 
 {
     private Uri _uri = new Uri("http://localhost:11434");
     private Chat _chat;
@@ -45,7 +45,7 @@ public class OllamaChat : IChat
     {
         _ollama?.Dispose();
         _ollama = new OllamaApiClient(_uri);
-        _ollama.SelectedModel = "deepseek-coder-v2:16b";
+        _ollama.SelectedModel = "phi4";
         return new Chat(_ollama);
     }
     
@@ -58,5 +58,10 @@ public class OllamaChat : IChat
     public void SendContext(string prompt)
     {
         _chat.SendAsync(prompt);
+    }
+
+    public void Dispose()
+    {
+        _ollama.Dispose();
     }
 }
