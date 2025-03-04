@@ -8,31 +8,49 @@ public class Creator
 {
     private readonly string _gameName = "Game1";
     private readonly string _outputDir = "C:\\Users\\alexe\\Desktop\\OutputAI\\Game";
-    private readonly IChat _chat;
+    private IChat _chat;
     
     private List<string> _contexts = new List<string>();
 
     public Creator()
     {
         Directory.CreateDirectory(_outputDir);
-        _chat = new OllamaChat();
     }
 
     public void Run()
     {
-        string design = GameDesign();
-        _contexts.Add("We are creating a new game with game design: ```GameDesign " + Environment.NewLine + design + Environment.NewLine + " ``` ");
-        string modules = CreateModules();
-        _contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules + Environment.NewLine+ " ``` ");
-        CreateModulesCode(modules);
+        bool finished = false;
+        while (!finished)
+        {
+            try
+            {
+                using (_chat = new OllamaChat())
+                {
+                    string design = GameDesign();
+                    _contexts.Add("We are creating a new game with game design: ```GameDesign " + Environment.NewLine +
+                                  design +
+                                  Environment.NewLine + " ``` ");
+                    string modules = CreateModules();
+                    _contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules +
+                                  Environment.NewLine + " ``` ");
+                    CreateModulesCode(modules);
+                    finished = true;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                continue;
+            }
+        }
     }
-    
+
     private string GameDesign()
     {
         if (TryLoadFile(_outputDir,_gameName, out var gameDesignLoaded)) 
             return gameDesignLoaded;
         
-        string prompt = "Come up with a game design for a simple logic game for PC.";
+        string prompt = "Come up with a game design for a simple game (like Three in a row) for PC.";
         var design = _chat.SendPrompt(prompt);
         SaveFile(_gameName,design);
         return design;
