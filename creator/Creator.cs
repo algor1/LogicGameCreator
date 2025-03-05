@@ -35,6 +35,8 @@ public class Creator
                     _contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules +
                                   Environment.NewLine + " ``` ");
                     CreateModulesCode(modules);
+                    CreateProject();
+                    CreateSolution();
                     finished = true;
                 }
             }
@@ -44,6 +46,22 @@ public class Creator
                 continue;
             }
         }
+    }
+
+    private void CreateProject()
+    {
+        string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
+        var project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+        _fileSaver.SaveFile("project", project);
+        _contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
+    }
+
+    private void CreateSolution()
+    {
+        string prompt = "Create solution (.sln) file and include project file that was described before";
+        var solution = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+        _fileSaver.SaveFile("solution", solution);
+        _contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
     }
 
     private string GameDesign()
