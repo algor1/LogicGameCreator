@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OllamaSharp;
@@ -15,7 +16,7 @@ public class Creator
 
     public Creator()
     {
-        _fileSaver = new FileSaver();
+        _fileSaver = new FileSaver(_gameName, _gameName);
     }
 
     public void Run()
@@ -50,22 +51,37 @@ public class Creator
 
     private void CreateProject()
     {
-        string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
-        var project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
-        _fileSaver.SaveFile("project", project);
+        if (!_fileSaver.TryLoadFile("project", out var project))
+        {
+            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
+            project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+            _fileSaver.SaveFile("project", project);
+        }
+        
         string[] xml = OutputParser.Parse(project, "xml");
         string projectXml = xml.FirstOrDefault(string.Empty);
         if (projectXml.Length > 0 && projectXml.Contains("<Project"))
-            _fileSaver.SaveFile("project", "csproj", projectXml);
+            _fileSaver.SaveFile(_gameName, "csproj", projectXml);
         _contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
     }
 
     private void CreateSolution()
     {
-        string prompt = "Create solution (.sln) file and include project file that was described before";
-        var solution = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
-        _fileSaver.SaveFile("solution", solution);
+        var solutionFileName = Path.Combine(_fileSaver.SolutionDir, _gameName + ".sln");
+        if (!_fileSaver.TryLoadFile(solutionFileName, out var solution))
+        {
+            GenerateSolution();
+        }
+        
         _contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
+    }
+
+    private void GenerateSolution()
+    {
+        RunCommand("dotnet", $"new sln -n {_gameName}", _fileSaver.SolutionDir);
+        RunCommand("dotnet", $"sln add {_gameName}/{_gameName}.csproj", _fileSaver.SolutionDir);
+        
+        Console.WriteLine("Solution created successfully!");
     }
 
     private string GameDesign()
@@ -137,5 +153,27 @@ public class Creator
         }
         
         return modules;
+    }
+    
+    static void RunCommand(string command, string args, string workingDirectory)
+    {
+        var process = new Process()
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDirectory
+            }
+        };
+        
+        process.Start();
+        Console.WriteLine(process.StandardOutput.ReadToEnd());
+        Console.WriteLine(process.StandardError.ReadToEnd());
+        process.WaitForExit();
     }
 }
