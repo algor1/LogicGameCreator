@@ -14,12 +14,17 @@ public class FileSaver
         File.WriteAllText(Path.Combine(_outputDir, fileName + ".txt"), content);
         SaveCSharp(fileName, content);
     }
+    
+    public void SaveFile(string fileName , string extension, string content)
+    {
+        File.WriteAllText(Path.Combine(_outputDir, fileName + "." + extension), content);
+    }
 
     public void SaveCSharp(string fileName, string content)
     {
         string[] code = OutputParser.Parse(content, "csharp");
         if (code.Length > 0)
-            File.WriteAllText(Path.Combine(_outputDir, fileName + ".cs"), string.Join("\n", code));
+            SaveFile(fileName, "cs", string.Join("\n", code));
     }
 
     public bool TryLoadFile(string fileName, out string fileContent)

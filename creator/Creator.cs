@@ -53,6 +53,10 @@ public class Creator
         string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
         var project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
         _fileSaver.SaveFile("project", project);
+        string[] xml = OutputParser.Parse(project, "xml");
+        string projectXml = xml.FirstOrDefault(string.Empty);
+        if (projectXml.Length > 0 && projectXml.Contains("<Project"))
+            _fileSaver.SaveFile("project", "csproj", projectXml);
         _contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
     }
 
