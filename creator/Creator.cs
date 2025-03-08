@@ -38,6 +38,8 @@ public class Creator
                     CreateModulesCode(modules);
                     CreateProject();
                     CreateSolution();
+                    BiuldSolution();
+   
                     finished = true;
                 }
             }
@@ -49,9 +51,14 @@ public class Creator
         }
     }
 
+    private string BiuldSolution()
+    {
+        return RunCommand("dotnet", "build", _fileSaver.SolutionDir);
+    }
+
     private void CreateProject()
     {
-        if (!_fileSaver.TryLoadFile("project", out var project))
+        if (!_fileSaver.TryLoadTxtFile("project", out var project))
         {
             string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
             project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
@@ -86,7 +93,7 @@ public class Creator
 
     private string GameDesign()
     {
-        if (_fileSaver.TryLoadFile(_gameName, out var gameDesignLoaded)) 
+        if (_fileSaver.TryLoadTxtFile(_gameName, out var gameDesignLoaded)) 
             return gameDesignLoaded;
         
         string prompt = "Come up with a game design for a simple game (like Three in a row) for PC.";
@@ -97,7 +104,7 @@ public class Creator
 
     private string CreateModules()
     {
-        if (_fileSaver.TryLoadFile(_gameName + "_Modules" , out var modulesLoaded)) 
+        if (_fileSaver.TryLoadTxtFile(_gameName + "_Modules" , out var modulesLoaded)) 
             return modulesLoaded;
     
         string phrase = "let's try to write such a game. First, decompose application on into modules and submodules.";
@@ -115,7 +122,7 @@ public class Creator
     {
         foreach (var module in ParseModules(modulesJson))
         {
-            if (_fileSaver.TryLoadFile(module.Item1, out var fileContent))
+            if (_fileSaver.TryLoadTxtFile(module.Item1, out var fileContent))
             {
                 _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
                 _fileSaver.SaveCSharp(module.Item1, fileContent);
@@ -155,7 +162,7 @@ public class Creator
         return modules;
     }
     
-    static void RunCommand(string command, string args, string workingDirectory)
+    static string RunCommand(string command, string args, string workingDirectory)
     {
         var process = new Process()
         {
@@ -172,8 +179,11 @@ public class Creator
         };
         
         process.Start();
-        Console.WriteLine(process.StandardOutput.ReadToEnd());
-        Console.WriteLine(process.StandardError.ReadToEnd());
+        string output = process.StandardOutput.ReadToEnd();
+        Console.WriteLine(output);
+        string error = process.StandardError.ReadToEnd();
+        Console.WriteLine(error);
         process.WaitForExit();
+        return output + error;
     }
 }

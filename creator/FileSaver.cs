@@ -31,11 +31,16 @@ public class FileSaver
             SaveFile(fileName, "cs", string.Join("\n", code));
     }
 
+    public bool TryLoadTxtFile(string fileName, out string fileContent)
+    {
+        return TryLoadFile(fileName +".txt", out fileContent);
+    }
+
     public bool TryLoadFile(string fileName, out string fileContent)
     {
-        if (File.Exists(Path.Combine(_projectDir, fileName + ".txt")))
+        if (File.Exists(Path.Combine(_projectDir, fileName)))
         {
-            fileContent = File.ReadAllText(Path.Combine(_projectDir, fileName + ".txt"));
+            fileContent = File.ReadAllText(Path.Combine(_projectDir, fileName));
             return true;
         }
 
