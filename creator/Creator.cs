@@ -38,8 +38,8 @@ public class Creator
                     CreateModulesCode(modules);
                     CreateProject();
                     CreateSolution();
-                    BiuldSolution();
-   
+                    string buildErrors = BiuldSolution();
+                    FixBuild(buildErrors);
                     finished = true;
                 }
             }
@@ -49,6 +49,13 @@ public class Creator
                 continue;
             }
         }
+    }
+
+    private string FixBuild(string buildErrors)
+    {
+        string prompt = $"I have errors in building solution. Fix them please: {Environment.NewLine}{buildErrors}";
+        return _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+        
     }
 
     private string BiuldSolution()
@@ -68,7 +75,7 @@ public class Creator
         string[] xml = OutputParser.Parse(project, "xml");
         string projectXml = xml.FirstOrDefault(string.Empty);
         if (projectXml.Length > 0 && projectXml.Contains("<Project"))
-            _fileSaver.SaveFile(_gameName, "csproj", projectXml);
+            _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
         _contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
     }
 
