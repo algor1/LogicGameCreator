@@ -5,6 +5,34 @@ using OllamaSharp;
 
 namespace Creator;
 
+public class CommandRunner
+{
+    public static string RunCommand(string command, string args, string workingDirectory)
+    {
+        var process = new Process()
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDirectory
+            }
+        };
+        
+        process.Start();
+        string output = process.StandardOutput.ReadToEnd();
+        Console.WriteLine(output);
+        string error = process.StandardError.ReadToEnd();
+        Console.WriteLine(error);
+        process.WaitForExit();
+        return output + error;
+    }
+}
+
 public class Creator
 {
     private readonly string _gameName = "Game1";
@@ -36,7 +64,7 @@ public class Creator
                     CreateModulesCode(modules);
                     CreateProject();
                     CreateSolution();
-                    string buildErrors = BiuldSolution();
+                    string buildErrors = BuildSolution();
                     FixBuild(buildErrors);
                     finished = true;
                 }
@@ -49,54 +77,20 @@ public class Creator
         }
     }
 
-    private string FixBuild(string buildErrors)
+    private void FixBuild(string buildErrors)
     {
         string prompt = $"I have errors in building solution. Fix bugs and write new content of files in : {Environment.NewLine}{buildErrors}"+
                         Environment.NewLine + "Return only name of files and updated files contents with fixed changes in this json format."+
                         "{\"files\": [{\"fileName\": \"...\", \"fileContents\": \"...\"}, ..., {\"fileName\": \"...\", \"fileContents\": \"...\"}] ";
-        
-        return _chat.ResetAndSendPrompt(_contextHolder.GetAllProjectFilesContext() + prompt);
-        
+
+        var aiResult = _chat.ResetAndSendPrompt(_contextHolder.GetAllProjectFilesContext() + prompt);
+        var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(aiResult, "json"));
+        var jsonTupleArray = GetJsonTupleArray(jsonText, "files", "fileName", "fileContents");
     }
 
-    private string BiuldSolution()
+    private string BuildSolution()
     {
-        return RunCommand("dotnet", "build", _fileSaver.SolutionDir);
-    }
-
-    private void CreateProject()
-    {
-        if (!_fileSaver.TryLoadTxtFile("project", out var project))
-        {
-            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
-            project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-            _fileSaver.SaveFile("project", project);
-        }
-        
-        string[] xml = OutputParser.Parse(project, "xml");
-        string projectXml = xml.FirstOrDefault(string.Empty);
-        if (projectXml.Length > 0 && projectXml.Contains("<Project"))
-            _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
-        _contextHolder._contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
-    }
-
-    private void CreateSolution()
-    {
-        var solutionFileName = Path.Combine(_fileSaver.SolutionDir, _gameName + ".sln");
-        if (!_fileSaver.TryLoadFile(solutionFileName, out var solution))
-        {
-            GenerateSolution();
-        }
-
-        _contextHolder._contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
-    }
-
-    private void GenerateSolution()
-    {
-        RunCommand("dotnet", $"new sln -n {_gameName}", _fileSaver.SolutionDir);
-        RunCommand("dotnet", $"sln add {_gameName}/{_gameName}.csproj", _fileSaver.SolutionDir);
-        
-        Console.WriteLine("Solution created successfully!");
+        return CommandRunner.RunCommand("dotnet", "build", _fileSaver.SolutionDir);
     }
 
     private string GameDesign()
@@ -140,48 +134,72 @@ public class Creator
             string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
             var moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
             _fileSaver.SaveFile(module.Item1, moduleCode);
-            _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
+            
+            string[] code = OutputParser.Parse(moduleCode, "csharp");
+            if (code.Length > 0)
+            {
+                string fullPath = _fileSaver.SaveFileInProject(module.Item1, "cs", string.Join("\n", code));
+                _contextHolder.AddProjectFileContext(fullPath, moduleCode);
+            }
         }
     }
 
     private List<(string, string)> ParseModules(string jsonOutput)
     {
-        var json = OutputParser.Parse(jsonOutput, "json");
-        using JsonDocument doc = JsonDocument.Parse(json.First());
+        var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(jsonOutput, "json"));
+
+        return GetJsonTupleArray(jsonText, "modules", "name", "description");
+    }
+
+    private static List<(string, string)> GetJsonTupleArray(string jsonText , string arrayName, string propertyName, string proprrtyContent)
+    {
+        using JsonDocument doc = JsonDocument.Parse(jsonText);
         List<(string, string)> modules = new();
         
-        foreach (var element in doc.RootElement.GetProperty("modules").EnumerateArray())
+        foreach (var element in doc.RootElement.GetProperty(arrayName).EnumerateArray())
         {
-            string name = element.GetProperty("name").GetString();
-            string description = element.GetProperty("description").GetString();
+            string name = element.GetProperty(propertyName).GetString();
+            string description = element.GetProperty(proprrtyContent).GetString();
             modules.Add((name, description));
         }
         
         return modules;
     }
-    
-    static string RunCommand(string command, string args, string workingDirectory)
+
+    private void CreateProject()
     {
-        var process = new Process()
+        if (!_fileSaver.TryLoadTxtFile("project", out var project))
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = workingDirectory
-            }
-        };
+            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
+            project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
+            _fileSaver.SaveFile("project", project);
+        }
         
-        process.Start();
-        string output = process.StandardOutput.ReadToEnd();
-        Console.WriteLine(output);
-        string error = process.StandardError.ReadToEnd();
-        Console.WriteLine(error);
-        process.WaitForExit();
-        return output + error;
+        string[] xml = OutputParser.Parse(project, "xml");
+        string projectXml = xml.FirstOrDefault(string.Empty);
+        if (projectXml.Length > 0 && projectXml.Contains("<Project"))
+        {
+            string fullPath = _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
+            _contextHolder.AddProjectFileContext(fullPath, projectXml);
+        }
+    }
+
+    private void CreateSolution()
+    {
+        var solutionFileName = Path.Combine(_fileSaver.SolutionDir, _gameName + ".sln");
+        if (!_fileSaver.TryLoadFile(solutionFileName, out var solution))
+        {
+            GenerateSolution();
+        }
+
+        _contextHolder._contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
+    }
+
+    private void GenerateSolution()
+    {
+        CommandRunner.RunCommand("dotnet", $"new sln -n {_gameName}", _fileSaver.SolutionDir);
+        CommandRunner.RunCommand("dotnet", $"sln add {_gameName}/{_gameName}.csproj", _fileSaver.SolutionDir);
+        
+        Console.WriteLine("Solution created successfully!");
     }
 }

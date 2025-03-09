@@ -19,23 +19,25 @@ public class FileSaver
     public void SaveFile(string fileName, string content)
     {
         File.WriteAllText(Path.Combine(_aiTextAnswerstDir, fileName + ".txt"), content);
-        SaveCSharp(fileName, content);
     }
     
-    public void SaveFileInProject(string fileName , string extension, string content)
+    public string SaveFileInProject(string fileName , string extension, string content)
     {
         var fullPath = Path.Combine(_projectDir, fileName + "." + extension);
         if (!File.Exists(fullPath))
         {
             File.WriteAllText(fullPath, content);
         }
+        return fullPath;
     }
 
-    public void SaveCSharp(string fileName, string content)
+    public string SaveCSharp(string fileName, string content)
     {
         string[] code = OutputParser.Parse(content, "csharp");
         if (code.Length > 0)
-            SaveFileInProject(fileName, "cs", string.Join("\n", code));
+            return SaveFileInProject(fileName, "cs", string.Join("\n", code));
+        
+        return string.Empty;
     }
 
     public bool TryLoadTxtFile(string fileName, out string fileContent)
