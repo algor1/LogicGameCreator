@@ -24,7 +24,11 @@ public class FileSaver
     
     public void SaveFileInProject(string fileName , string extension, string content)
     {
-        File.WriteAllText(Path.Combine(_projectDir, fileName + "." + extension), content);
+        var fullPath = Path.Combine(_projectDir, fileName + "." + extension);
+        if (!File.Exists(fullPath))
+        {
+            File.WriteAllText(fullPath, content);
+        }
     }
 
     public void SaveCSharp(string fileName, string content)

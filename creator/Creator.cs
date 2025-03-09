@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OllamaSharp;
@@ -10,13 +9,14 @@ public class Creator
 {
     private readonly string _gameName = "Game1";
     private IChat _chat;
-    
-    private List<string> _contexts = new List<string>();
+
     private readonly FileSaver _fileSaver;
+    private readonly ContextHolder _contextHolder;
 
     public Creator()
     {
         _fileSaver = new FileSaver(_gameName, _gameName);
+        _contextHolder = new ContextHolder();
     }
 
     public void Run()
@@ -29,12 +29,10 @@ public class Creator
                 using (_chat = new OllamaChat())
                 {
                     string design = GameDesign();
-                    _contexts.Add("We are creating a new game with game design: ```GameDesign " + Environment.NewLine +
-                                  design +
-                                  Environment.NewLine + " ``` ");
+                    _contextHolder.AddGameDesign(design);
                     string modules = CreateModules();
-                    _contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules +
-                                  Environment.NewLine + " ``` ");
+                    _contextHolder._contexts.Add("Game will consists these modules: ```Modules " + Environment.NewLine + modules +
+                                                 Environment.NewLine + " ``` ");
                     CreateModulesCode(modules);
                     CreateProject();
                     CreateSolution();
@@ -53,8 +51,11 @@ public class Creator
 
     private string FixBuild(string buildErrors)
     {
-        string prompt = $"I have errors in building solution. Fix them please: {Environment.NewLine}{buildErrors}";
-        return _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+        string prompt = $"I have errors in building solution. Fix bugs and write new content of files in : {Environment.NewLine}{buildErrors}"+
+                        Environment.NewLine + "Return only name of files and updated files contents with fixed changes in this json format."+
+                        "{\"files\": [{\"fileName\": \"...\", \"fileContents\": \"...\"}, ..., {\"fileName\": \"...\", \"fileContents\": \"...\"}] ";
+        
+        return _chat.ResetAndSendPrompt(_contextHolder.GetAllProjectFilesContext() + prompt);
         
     }
 
@@ -68,7 +69,7 @@ public class Creator
         if (!_fileSaver.TryLoadTxtFile("project", out var project))
         {
             string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
-            project = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+            project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
             _fileSaver.SaveFile("project", project);
         }
         
@@ -76,7 +77,7 @@ public class Creator
         string projectXml = xml.FirstOrDefault(string.Empty);
         if (projectXml.Length > 0 && projectXml.Contains("<Project"))
             _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
-        _contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
+        _contextHolder._contexts.Add($"```ProjectFile " + Environment.NewLine + project + Environment.NewLine + " ```");
     }
 
     private void CreateSolution()
@@ -86,8 +87,8 @@ public class Creator
         {
             GenerateSolution();
         }
-        
-        _contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
+
+        _contextHolder._contexts.Add($"```SolutionFile " + Environment.NewLine + solution + Environment.NewLine + " ```");
     }
 
     private void GenerateSolution()
@@ -131,26 +132,16 @@ public class Creator
         {
             if (_fileSaver.TryLoadTxtFile(module.Item1, out var fileContent))
             {
-                _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
+                _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
                 _fileSaver.SaveCSharp(module.Item1, fileContent);
                 continue;
             }
 
             string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
-            var moduleCode = _chat.ResetAndSendPrompt(GetAllContext() + prompt);
+            var moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
             _fileSaver.SaveFile(module.Item1, moduleCode);
-            _contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
+            _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
         }
-    }
-
-    private string GetAllContext()
-    {
-        StringBuilder result = new StringBuilder();
-        foreach (var context in _contexts)
-        {
-            result.AppendLine(context);
-        }
-        return result.ToString();
     }
 
     private List<(string, string)> ParseModules(string jsonOutput)
