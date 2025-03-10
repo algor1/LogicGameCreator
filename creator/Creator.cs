@@ -1,37 +1,9 @@
-﻿using System.Diagnostics;
+﻿using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OllamaSharp;
 
 namespace Creator;
-
-public class CommandRunner
-{
-    public static string RunCommand(string command, string args, string workingDirectory)
-    {
-        var process = new Process()
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = command,
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = workingDirectory
-            }
-        };
-        
-        process.Start();
-        string output = process.StandardOutput.ReadToEnd();
-        Console.WriteLine(output);
-        string error = process.StandardError.ReadToEnd();
-        Console.WriteLine(error);
-        process.WaitForExit();
-        return output + error;
-    }
-}
 
 public class Creator
 {
@@ -64,8 +36,14 @@ public class Creator
                     CreateModulesCode(modules);
                     CreateProject();
                     CreateSolution();
-                    string buildErrors = BuildSolution();
-                    FixBuild(buildErrors);
+                    while (true)
+                    {
+                        string buildResult = BuildSolution();
+                        if (!buildResult.ToUpper().Contains("ERROR"))
+                            break;
+                        FixBuild(buildResult);    
+                    }
+                    
                     finished = true;
                 }
             }
@@ -80,12 +58,28 @@ public class Creator
     private void FixBuild(string buildErrors)
     {
         string prompt = $"I have errors in building solution. Fix bugs and write new content of files in : {Environment.NewLine}{buildErrors}"+
-                        Environment.NewLine + "Return only name of files and updated files contents with fixed changes in this json format."+
-                        "{\"files\": [{\"fileName\": \"...\", \"fileContents\": \"...\"}, ..., {\"fileName\": \"...\", \"fileContents\": \"...\"}] ";
+                        Environment.NewLine + "Return only name of files and updated files contents with fixed changes in this json format. I don't need explanation, I dont need examples. Answer only json " +
+                        "{\"files\": [{\"fullPath\": \"...\", \"fileContents\": \"...\"}, ..., {\"fileName\": \"...\", \"fileContents\": \"...\"}] ";
 
         var aiResult = _chat.ResetAndSendPrompt(_contextHolder.GetAllProjectFilesContext() + prompt);
         var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(aiResult, "json"));
-        var jsonTupleArray = GetJsonTupleArray(jsonText, "files", "fileName", "fileContents");
+        var filesToFix = GetJsonTupleArray(jsonText, "files", "fullPath", "fileContents");
+        foreach (var file in filesToFix)
+        {
+            var oldContent = _contextHolder.GetProjectFilesContext(file.Item1);
+            if (true)//!HasSignificantChanges(oldContent, file.Item2))
+            {
+                File.WriteAllText(file.Item1, file.Item2);
+                _contextHolder.SetProjectFilesContext(file.Item1, file.Item2);
+            }
+        }        
+    }
+
+    private bool HasSignificantChanges(string oldContent, string newContent)
+    {
+        string result = _chat.ResetAndSendPrompt($"{ContextHolder.separator}OldFile"+Environment.NewLine + oldContent + Environment.NewLine + 
+                                                 $"{ContextHolder.separator}NewFile"+Environment.NewLine + newContent + Environment.NewLine + "Are logic in NewFile changed dramatically against OldFile. Answer only one word: \"YES\" or \"NO\"");
+        return result.ToUpper().Contains("YES");
     }
 
     private string BuildSolution()
@@ -100,7 +94,7 @@ public class Creator
         
         string prompt = "Come up with a game design for a simple game (like Three in a row) for PC.";
         var design = _chat.SendPrompt(prompt);
-        _fileSaver.SaveFile(_gameName,design);
+        _fileSaver.SaveTxtFile(_gameName,design);
         return design;
     }
 
@@ -116,7 +110,7 @@ public class Creator
             "description should be detailed, description should include logic of module, description should include data types of input and output, json must contain oly name and description";
 
         var modulesResult = _chat.SendPrompt(phrase + giveMeTheAnswerInJsonFormat);
-        _fileSaver.SaveFile(_gameName + "_Modules", modulesResult);
+        _fileSaver.SaveTxtFile(_gameName + "_Modules", modulesResult);
         return modulesResult;
     }
 
@@ -133,13 +127,13 @@ public class Creator
 
             string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
             var moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-            _fileSaver.SaveFile(module.Item1, moduleCode);
+            _fileSaver.SaveTxtFile(module.Item1, moduleCode);
             
             string[] code = OutputParser.Parse(moduleCode, "csharp");
             if (code.Length > 0)
             {
                 string fullPath = _fileSaver.SaveFileInProject(module.Item1, "cs", string.Join("\n", code));
-                _contextHolder.AddProjectFileContext(fullPath, moduleCode);
+                _contextHolder.SetProjectFilesContext(fullPath, moduleCode);
             }
         }
     }
@@ -172,7 +166,7 @@ public class Creator
         {
             string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
             project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-            _fileSaver.SaveFile("project", project);
+            _fileSaver.SaveTxtFile("project", project);
         }
         
         string[] xml = OutputParser.Parse(project, "xml");
@@ -180,7 +174,7 @@ public class Creator
         if (projectXml.Length > 0 && projectXml.Contains("<Project"))
         {
             string fullPath = _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
-            _contextHolder.AddProjectFileContext(fullPath, projectXml);
+            _contextHolder.SetProjectFilesContext(fullPath, projectXml);
         }
     }
 

@@ -5,7 +5,7 @@ public record GeneratedFile(string FullPath, string Content)
     private const string Separator = "```";
     public override string ToString()
     {
-        return Separator + Path.GetFileName(FullPath) + Environment.NewLine +
+        return Separator + " " + FullPath + Environment.NewLine +
             Content + Environment.NewLine + Separator;
     }
 }

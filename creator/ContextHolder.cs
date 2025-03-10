@@ -5,8 +5,8 @@ namespace Creator;
 public class ContextHolder
 {
     public List<string> _contexts = new List<string>();
-    public List<GeneratedFile> _profectFilesContexts = new List<GeneratedFile>();
-    private const string separator = "```";
+    public Dictionary<string, string> _projectFilesContexts = new Dictionary<string, string>();
+    public const string separator = "```";
 
     public ContextHolder()
     {
@@ -43,12 +43,17 @@ public class ContextHolder
     public string GetAllProjectFilesContext()
     {
         string prompt = "Here all files in my solution are:" + Environment.NewLine;
-        string context = string.Join(Environment.NewLine, _profectFilesContexts.Select(c => c.ToString()));
+        string context = string.Join(Environment.NewLine, _projectFilesContexts.Select(c => c.ToString()));
         return prompt + context;
     }
 
-    public void AddProjectFileContext(string fullPath, string projectFile)
+    public string GetProjectFilesContext(string fullPath)
     {
-        _profectFilesContexts.Add(new GeneratedFile(fullPath,projectFile));
+        return _projectFilesContexts[fullPath];
+    }
+    
+    public void SetProjectFilesContext(string fullPath, string content)
+    {
+        _projectFilesContexts[fullPath] = content;
     }
 }

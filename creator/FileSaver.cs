@@ -16,7 +16,7 @@ public class FileSaver
         Directory.CreateDirectory(_aiTextAnswerstDir);
     }
 
-    public void SaveFile(string fileName, string content)
+    public void SaveTxtFile(string fileName, string content)
     {
         File.WriteAllText(Path.Combine(_aiTextAnswerstDir, fileName + ".txt"), content);
     }
