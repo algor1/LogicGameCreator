@@ -28,7 +28,7 @@ public class OpenAiChat : IChat
 
     public string ResetAndSendPrompt(string input)
     {
-        throw new NotImplementedException();
+        return SendPrompt(input);
     }
 
     public void Dispose()

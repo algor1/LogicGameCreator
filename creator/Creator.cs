@@ -7,7 +7,7 @@ namespace Creator;
 
 public class Creator
 {
-    private readonly string _gameName = "Game1";
+    private readonly string _gameName = "Game2";
     private IChat _chat;
 
     private readonly FileSaver _fileSaver;
@@ -26,7 +26,7 @@ public class Creator
         {
             try
             {
-                using (_chat = new OllamaChat())
+                using (_chat = new OpenAiChat())
                 {
                     string design = GameDesign();
                     _contextHolder.AddGameDesign(design);
@@ -39,7 +39,7 @@ public class Creator
                     while (true)
                     {
                         string buildResult = BuildSolution();
-                        if (!buildResult.ToUpper().Contains("ERROR"))
+                        if (!buildResult.Contains("Build FAILED"))
                             break;
                         FixBuild(buildResult);    
                     }
@@ -57,11 +57,14 @@ public class Creator
 
     private void FixBuild(string buildErrors)
     {
-        string prompt = $"I have errors in building solution. Fix bugs and write new content of files in : {Environment.NewLine}{buildErrors}"+
-                        Environment.NewLine + "Return only name of files and updated files contents with fixed changes in this json format. I don't need explanation, I dont need examples. Answer only json " +
-                        "{\"files\": [{\"fullPath\": \"...\", \"fileContents\": \"...\"}, ..., {\"fileName\": \"...\", \"fileContents\": \"...\"}] ";
+        string prompt = $"I have errors in building the solution. ```Errors {Environment.NewLine}{buildErrors} ```{Environment.NewLine}" +
+                        "Fix the errors and provide the full corrected content of the affected files." + Environment.NewLine +
+                        "Return only a valid JSON object without explanations, comments, or any additional text. The JSON must be strictly formatted as follows:" + Environment.NewLine +
+                        "{ \"files\": [ { \"fullPath\": \"string\", \"fileContents\": \"full file content here\" }, ..., { \"fullPath\": \"string\", \"fileContents\": \"full file content here\" } ] }" + Environment.NewLine +
+                        "Ensure that the JSON is valid, properly escaped";
 
-        var aiResult = _chat.ResetAndSendPrompt(_contextHolder.GetAllProjectFilesContext() + prompt);
+        var allProjectFilesContext = _contextHolder.GetAllProjectFilesContext();    
+        var aiResult = _chat.ResetAndSendPrompt(allProjectFilesContext + prompt);
         var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(aiResult, "json"));
         var filesToFix = GetJsonTupleArray(jsonText, "files", "fullPath", "fileContents");
         foreach (var file in filesToFix)
@@ -92,7 +95,7 @@ public class Creator
         if (_fileSaver.TryLoadTxtFile(_gameName, out var gameDesignLoaded)) 
             return gameDesignLoaded;
         
-        string prompt = "Come up with a game design for a simple game (like Three in a row) for PC.";
+        string prompt = "Come up with a game design for a very simple game with balls on small board, like Three in a row or etc, for PC. The rules should be very simple. Game should be usable for kids. ";
         var design = _chat.SendPrompt(prompt);
         _fileSaver.SaveTxtFile(_gameName,design);
         return design;
@@ -109,7 +112,7 @@ public class Creator
             "{\"modules\": [{\"name\": \"...\", \"description\": \"...\"}, ..., {\"name\": \"...\", \"description\": \"...\"}] " +
             "description should be detailed, description should include logic of module, description should include data types of input and output, json must contain oly name and description";
 
-        var modulesResult = _chat.SendPrompt(phrase + giveMeTheAnswerInJsonFormat);
+        var modulesResult = _chat.SendPrompt(_contextHolder.GetAllContext()+ phrase + giveMeTheAnswerInJsonFormat);
         _fileSaver.SaveTxtFile(_gameName + "_Modules", modulesResult);
         return modulesResult;
     }
@@ -118,22 +121,21 @@ public class Creator
     {
         foreach (var module in ParseModules(modulesJson))
         {
-            if (_fileSaver.TryLoadTxtFile(module.Item1, out var fileContent))
+            if (!_fileSaver.TryLoadTxtFile(module.Item1, out var moduleCode))
             {
-                _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + fileContent + Environment.NewLine + " ```");
-                _fileSaver.SaveCSharp(module.Item1, fileContent);
-                continue;
+                string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
+                moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
+                _fileSaver.SaveTxtFile(module.Item1, moduleCode);
             }
 
-            string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
-            var moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-            _fileSaver.SaveTxtFile(module.Item1, moduleCode);
+            _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
             
             string[] code = OutputParser.Parse(moduleCode, "csharp");
             if (code.Length > 0)
             {
-                string fullPath = _fileSaver.SaveFileInProject(module.Item1, "cs", string.Join("\n", code));
-                _contextHolder.SetProjectFilesContext(fullPath, moduleCode);
+                var content = string.Join("\n", code);
+                string fullPath = _fileSaver.SaveFileInProject(module.Item1, "cs", content);
+                _contextHolder.SetProjectFilesContext(fullPath, content);
             }
         }
     }
@@ -164,7 +166,7 @@ public class Creator
     {
         if (!_fileSaver.TryLoadTxtFile("project", out var project))
         {
-            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above";
+            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above. Do not include links on files";
             project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
             _fileSaver.SaveTxtFile("project", project);
         }
