@@ -56,4 +56,9 @@ public class FileSaver
         fileContent = string.Empty;  
         return false;
     }
+
+    public void RemoveTxtFile(string fileName)
+    {
+        File.Delete(Path.Combine(_aiTextAnswerstDir, fileName) +".txt");
+    }
 }

@@ -57,25 +57,32 @@ public class Creator
 
     private void FixBuild(string buildErrors)
     {
-        string prompt = $"I have errors in building the solution. ```Errors {Environment.NewLine}{buildErrors} ```{Environment.NewLine}" +
-                        "Fix the errors and provide the full corrected content of the affected files." + Environment.NewLine +
-                        "Return only a valid JSON object without explanations, comments, or any additional text. The JSON must be strictly formatted as follows:" + Environment.NewLine +
-                        "{ \"files\": [ { \"fullPath\": \"string\", \"fileContents\": \"full file content here\" }, ..., { \"fullPath\": \"string\", \"fileContents\": \"full file content here\" } ] }" + Environment.NewLine +
-                        "Ensure that the JSON is valid, properly escaped";
+        if (!_fileSaver.TryLoadTxtFile("FilesToFix", out var aiResult))
+        {
+            string prompt =
+                $"I have errors in building the solution. ```Errors {Environment.NewLine}{buildErrors} ```{Environment.NewLine}" +
+                "Fix the errors and provide the full corrected content of the affected files." + Environment.NewLine +
+                "Return only the corrected file contents in the following format without examples of usage, explanations, comments, or any additional text:" +
+                Environment.NewLine +
+                "```FILE: <fullPath>" + " " + OutputParser.Delimetr + Environment.NewLine +
+                "<file contents> ```" + Environment.NewLine +
+                "Ensure that the format is clean and properly structured.";
 
-        var allProjectFilesContext = _contextHolder.GetAllProjectFilesContext();    
-        var aiResult = _chat.ResetAndSendPrompt(allProjectFilesContext + prompt);
-        var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(aiResult, "json"));
-        var filesToFix = GetJsonTupleArray(jsonText, "files", "fullPath", "fileContents");
+            var allProjectFilesContext = _contextHolder.GetAllProjectFilesContext();
+            aiResult = _chat.ResetAndSendPrompt(allProjectFilesContext + prompt);
+            _fileSaver.SaveTxtFile("FilesToFix", aiResult);
+        }
+
+        var filesToFix = OutputParser.ParseFiles(aiResult);
         foreach (var file in filesToFix)
         {
-            var oldContent = _contextHolder.GetProjectFilesContext(file.Item1);
             if (true)//!HasSignificantChanges(oldContent, file.Item2))
             {
-                File.WriteAllText(file.Item1, file.Item2);
-                _contextHolder.SetProjectFilesContext(file.Item1, file.Item2);
+                File.WriteAllText(file.Key, file.Value);
+                _contextHolder.SetProjectFilesContext(file.Key, file.Value);
             }
-        }        
+        }
+        _fileSaver.RemoveTxtFile("FilesToFix");
     }
 
     private bool HasSignificantChanges(string oldContent, string newContent)
