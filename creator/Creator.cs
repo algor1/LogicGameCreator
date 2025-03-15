@@ -8,7 +8,7 @@ namespace Creator;
 
 public class Creator
 {
-    private readonly string _gameName = "Game3";
+    private readonly string _gameName = "Game4";
 
     private readonly FileSaver _fileSaver;
     private readonly ContextHolder _contextHolder;

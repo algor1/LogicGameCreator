@@ -10,7 +10,7 @@ public class Ai: IDisposable
     {
         _fileSaver = fileSaver;
         _contextHolder = contextHolder;
-        _chat = new OllamaChat();
+        _chat = new OpenAiChat();
     }
 
     public string AskOrLoad(string fileName, string prompt, ContextType contextType)
