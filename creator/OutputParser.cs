@@ -1,4 +1,6 @@
-﻿namespace Creator;
+﻿using System.Text.Json;
+
+namespace Creator;
 
 public static class OutputParser
 {
@@ -47,5 +49,27 @@ public static class OutputParser
         }
 
         return files;
+    }
+
+    public static List<(string, string)> ParseModules(string jsonOutput)
+    {
+        var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(jsonOutput, "json"));
+
+        return GetJsonTupleArray(jsonText, "modules", "name", "description");
+    }
+
+    private static List<(string, string)> GetJsonTupleArray(string jsonText , string arrayName, string propertyName, string proprrtyContent)
+    {
+        using JsonDocument doc = JsonDocument.Parse(jsonText);
+        List<(string, string)> modules = new();
+        
+        foreach (var element in doc.RootElement.GetProperty(arrayName).EnumerateArray())
+        {
+            string name = element.GetProperty(propertyName).GetString();
+            string description = element.GetProperty(proprrtyContent).GetString();
+            modules.Add((name, description));
+        }
+        
+        return modules;
     }
 }

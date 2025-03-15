@@ -21,7 +21,7 @@ public class FileSaver
         File.WriteAllText(Path.Combine(_aiTextAnswerstDir, fileName + ".txt"), content);
     }
     
-    public string SaveFileInProject(string fileName , string extension, string content)
+    public string SaveFileInProjectIfNotExixst(string fileName , string extension, string content)
     {
         var fullPath = Path.Combine(_projectDir, fileName + "." + extension);
         if (!File.Exists(fullPath))
@@ -35,7 +35,7 @@ public class FileSaver
     {
         string[] code = OutputParser.Parse(content, "csharp");
         if (code.Length > 0)
-            return SaveFileInProject(fileName, "cs", string.Join("\n", code));
+            return SaveFileInProjectIfNotExixst(fileName, "cs", string.Join("\n", code));
         
         return string.Empty;
     }

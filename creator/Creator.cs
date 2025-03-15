@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices.JavaScript;
+﻿using System.ComponentModel.Design;
+using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OllamaSharp;
@@ -7,16 +8,17 @@ namespace Creator;
 
 public class Creator
 {
-    private readonly string _gameName = "Game2";
-    private IChat _chat;
+    private readonly string _gameName = "Game3";
 
     private readonly FileSaver _fileSaver;
     private readonly ContextHolder _contextHolder;
+    private Ai _ai;
 
     public Creator()
     {
         _fileSaver = new FileSaver(_gameName, _gameName);
         _contextHolder = new ContextHolder();
+        
     }
 
     public void Run()
@@ -26,7 +28,7 @@ public class Creator
         {
             try
             {
-                using (_chat = new OpenAiChat())
+                using (_ai = new Ai(_fileSaver, _contextHolder))
                 {
                     string design = GameDesign();
                     _contextHolder.AddGameDesign(design);
@@ -55,42 +57,7 @@ public class Creator
         }
     }
 
-    private void FixBuild(string buildErrors)
-    {
-        if (!_fileSaver.TryLoadTxtFile("FilesToFix", out var aiResult))
-        {
-            string prompt =
-                $"I have errors in building the solution. ```Errors {Environment.NewLine}{buildErrors} ```{Environment.NewLine}" +
-                "Fix the errors and provide the full corrected content of the affected files." + Environment.NewLine +
-                "Return only the corrected file contents in the following format without examples of usage, explanations, comments, or any additional text:" +
-                Environment.NewLine +
-                "```FILE: <fullPath>" + " " + OutputParser.Delimetr + Environment.NewLine +
-                "<file contents> ```" + Environment.NewLine +
-                "Ensure that the format is clean and properly structured.";
-
-            var allProjectFilesContext = _contextHolder.GetAllProjectFilesContext();
-            aiResult = _chat.ResetAndSendPrompt(allProjectFilesContext + prompt);
-            _fileSaver.SaveTxtFile("FilesToFix", aiResult);
-        }
-
-        var filesToFix = OutputParser.ParseFiles(aiResult);
-        foreach (var file in filesToFix)
-        {
-            if (true)//!HasSignificantChanges(oldContent, file.Item2))
-            {
-                File.WriteAllText(file.Key, file.Value);
-                _contextHolder.SetProjectFilesContext(file.Key, file.Value);
-            }
-        }
-        _fileSaver.RemoveTxtFile("FilesToFix");
-    }
-
-    private bool HasSignificantChanges(string oldContent, string newContent)
-    {
-        string result = _chat.ResetAndSendPrompt($"{ContextHolder.separator}OldFile"+Environment.NewLine + oldContent + Environment.NewLine + 
-                                                 $"{ContextHolder.separator}NewFile"+Environment.NewLine + newContent + Environment.NewLine + "Are logic in NewFile changed dramatically against OldFile. Answer only one word: \"YES\" or \"NO\"");
-        return result.ToUpper().Contains("YES");
-    }
+    
 
     private string BuildSolution()
     {
@@ -99,90 +66,55 @@ public class Creator
 
     private string GameDesign()
     {
-        if (_fileSaver.TryLoadTxtFile(_gameName, out var gameDesignLoaded)) 
-            return gameDesignLoaded;
         
         string prompt = "Come up with a game design for a very simple game with balls on small board, like Three in a row or etc, for PC. The rules should be very simple. Game should be usable for kids. ";
-        var design = _chat.SendPrompt(prompt);
-        _fileSaver.SaveTxtFile(_gameName,design);
+        string design = _ai.AskOrLoad(_gameName, prompt, ContextType.AllContext);
         return design;
     }
 
     private string CreateModules()
     {
-        if (_fileSaver.TryLoadTxtFile(_gameName + "_Modules" , out var modulesLoaded)) 
-            return modulesLoaded;
-    
+        string fileName = _gameName + "_Modules";
         string phrase = "let's try to write such a game. First, decompose application on into modules and submodules.";
         var giveMeTheAnswerInJsonFormat =
             " Give me the answer in this json format: " +
             "{\"modules\": [{\"name\": \"...\", \"description\": \"...\"}, ..., {\"name\": \"...\", \"description\": \"...\"}] " +
             "description should be detailed, description should include logic of module, description should include data types of input and output, json must contain oly name and description";
-
-        var modulesResult = _chat.SendPrompt(_contextHolder.GetAllContext()+ phrase + giveMeTheAnswerInJsonFormat);
-        _fileSaver.SaveTxtFile(_gameName + "_Modules", modulesResult);
+        
+        string modulesResult = _ai.AskOrLoad(fileName, phrase + giveMeTheAnswerInJsonFormat, ContextType.AllContext );
         return modulesResult;
     }
 
     private void CreateModulesCode(string modulesJson)
     {
-        foreach (var module in ParseModules(modulesJson))
+        foreach (var module in OutputParser.ParseModules(modulesJson))
         {
-            if (!_fileSaver.TryLoadTxtFile(module.Item1, out var moduleCode))
-            {
-                string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
-                moduleCode = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-                _fileSaver.SaveTxtFile(module.Item1, moduleCode);
-            }
-
-            _contextHolder._contexts.Add($"Code of module: {module.Item1} ```Code" + Environment.NewLine + moduleCode + Environment.NewLine + " ```");
+            string prompt = $"You are professional C# developer. Implement module of the game named: {module.Item1} . Module descripton: {module.Item2}";
+            var moduleCode = _ai.AskOrLoad(module.Item1, prompt, ContextType.AllContext );
             
             string[] code = OutputParser.Parse(moduleCode, "csharp");
             if (code.Length > 0)
             {
                 var content = string.Join("\n", code);
-                string fullPath = _fileSaver.SaveFileInProject(module.Item1, "cs", content);
+                string fullPath = _fileSaver.SaveFileInProjectIfNotExixst(module.Item1, "cs", content);
                 _contextHolder.SetProjectFilesContext(fullPath, content);
             }
         }
     }
 
-    private List<(string, string)> ParseModules(string jsonOutput)
-    {
-        var jsonText = string.Join(Environment.NewLine, OutputParser.Parse(jsonOutput, "json"));
-
-        return GetJsonTupleArray(jsonText, "modules", "name", "description");
-    }
-
-    private static List<(string, string)> GetJsonTupleArray(string jsonText , string arrayName, string propertyName, string proprrtyContent)
-    {
-        using JsonDocument doc = JsonDocument.Parse(jsonText);
-        List<(string, string)> modules = new();
-        
-        foreach (var element in doc.RootElement.GetProperty(arrayName).EnumerateArray())
-        {
-            string name = element.GetProperty(propertyName).GetString();
-            string description = element.GetProperty(proprrtyContent).GetString();
-            modules.Add((name, description));
-        }
-        
-        return modules;
-    }
-
     private void CreateProject()
     {
-        if (!_fileSaver.TryLoadTxtFile("project", out var project))
-        {
-            string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above. Do not include links on files";
-            project = _chat.ResetAndSendPrompt(_contextHolder.GetAllContext() + prompt);
-            _fileSaver.SaveTxtFile("project", project);
-        }
-        
+        var fileName = "project";
+        string prompt = $"Create project file {_gameName}.csproj with <OutputType>Exe</OutputType> <TargetFramework>net8.0</TargetFramework> and add all package references from C# code above. Do not include links on files";
+ 
+
+        string project = _ai.AskOrLoad(fileName, prompt, ContextType.AllContext);
+            
         string[] xml = OutputParser.Parse(project, "xml");
         string projectXml = xml.FirstOrDefault(string.Empty);
         if (projectXml.Length > 0 && projectXml.Contains("<Project"))
         {
-            string fullPath = _fileSaver.SaveFileInProject(_gameName, "csproj", projectXml);
+            string fullPath = _fileSaver.SaveFileInProjectIfNotExixst(_gameName, "csproj", projectXml);
             _contextHolder.SetProjectFilesContext(fullPath, projectXml);
         }
     }
@@ -205,4 +137,37 @@ public class Creator
         
         Console.WriteLine("Solution created successfully!");
     }
+    
+    private void FixBuild(string buildErrors)
+    {
+        string fileName = "FilesToFix";
+        string prompt = $"I have errors in building the solution. ```Errors {Environment.NewLine}{buildErrors} ```{Environment.NewLine}" + 
+                        "Fix only the errors in the affected files without changing anything else in the code." + Environment.NewLine +
+                        "Return only the corrected file contents in the following format, preserving all original class structures, methods, and logic:" +
+                        Environment.NewLine +
+                        "```FILE: <fullPath>" + " " + OutputParser.Delimetr + Environment.NewLine +
+                        "<corrected file contents> ```" + Environment.NewLine +
+                        "Do not rename or restructure any classes, methods, or variables unless absolutely necessary to fix the errors." +
+                        "Do not introduce new namespaces, modify method signatures, or change logic beyond the necessary fixes." +
+                        "Ensure that the output preserves all original formatting and structure.";
+        
+        var aiResult = _ai.AskOrLoad(fileName, prompt, ContextType.ProjectFiles );
+        
+        var filesToFix = OutputParser.ParseFiles(aiResult);
+        foreach (var file in filesToFix)
+        {
+            if (true)//!HasSignificantChanges(oldContent, file.Item2))
+            {
+                File.WriteAllText(file.Key, file.Value);
+                _contextHolder.SetProjectFilesContext(file.Key, file.Value);
+            }
+        }
+        _fileSaver.RemoveTxtFile(fileName);
+    }
+}
+
+public enum ContextType
+{
+    ProjectFiles = 1,
+    AllContext,
 }
